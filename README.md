@@ -6,6 +6,8 @@ notify_doorbell_light_wioterminal
 1台めのWioTerminal背面光センサーで室内側ドアホン液晶画面画面の点灯を検知して通知、
 2台めのWioTerminalがその通知を受けて、WioTerminal液晶画面に通知が来たことを知らせる画像を表示する仕組み。
 
+![Outline](doc/image/Outline_figure.png)
+
 # 必要なもの
 基本的にマンションなどのインターホン付きの個人宅での使用を想定。
 玄関側インターホンから呼び出しボタンを押すと、宅内のインターホン液晶画面が点灯するようになっている必要がある。
