@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+vars:
+  NOTIFIER_APP: notifier.uf2
+  TARGET: wioterminal
+
+tasks:
+  default:
+    desc: List all tasks 
+    cmd: task -l
+    silent: false
+  build:
+    desc: build notifier
+    cmds:
+      - tinygo build -o {{.NOTIFIER_APP}} --target={{.TARGET}} main.go
+    silent: false
+  clean:
+    desc: cleanup 
+    cmds:
+      - rm {{.NOTIFIER_APP}}
+    silent: true

@@ -58,3 +58,7 @@ goバージョンが1.25.1の時に作成したgo.modとgo.sumファイルをコ
 別のバージョンを使用する場合は、go.modとgo.sumファイルを削除してから、"go mod init main"と"go mod tidy"を実施、その後でビルドする。
 "go mod tidy"時にgithubに必要なパッケージを取りに行くため、ネット環境は必須。
 
+
+## 使用している Gopher 画像
+以下のURLを参照してください。
+https://github.com/gotify/logo/blob/master/README.md

@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+includes:
+  alerter: 
+    taskfile: ./alerter_DoorbellLightOn_wioterminal/Taskfile.yml
+    dir: ./alerter_DoorbellLightOn_wioterminal/
+
+  notifier: 
+    taskfile: ./notifier_DoorbellLightOn_wioterminal/Taskfile.yml
+    dir: ./notifier_DoorbellLightOn_wioterminal
+
+tasks:
+  default:
+    desc: List all tasks 
+    cmd: task -l
+    silent: false
+  build_all: 
+    desc: Build all
+    cmds:
+      - task: alerter:build
+      - task: notifier:build
+  cleanup: 
+    desc: cleanup
+    cmds:
+      - task: alerter:clean
+      - task: notifier:clean

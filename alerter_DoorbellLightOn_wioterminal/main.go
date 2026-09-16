@@ -6,15 +6,17 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"log"
 	"machine"
+	"net"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/sago35/tinygo-examples/wioterminal/initialize"
-	"tinygo.org/x/drivers/examples/ili9341/initdisplay"
 	"tinygo.org/x/drivers/ili9341"
-	"tinygo.org/x/drivers/net"
+	"tinygo.org/x/drivers/netlink"
+	"tinygo.org/x/drivers/netlink/probe"
 )
 
 //go:embed gotify_logo.jpg
@@ -24,13 +26,14 @@ var display *ili9341.Device
 var (
 	ssid     string
 	password string
+	port     int
 )
 
 func main() {
 	white := color.RGBA{0xFF, 0xFF, 0xFF, 0xFF}
 
-	ssid = "<YOUR WIFI SSID>"
-	password = "<YOUR WIFI PASSWORD>"
+	ssid = "<Your WiFi ssid>"
+	password = "<Your WiFi passphrase>"
 
 	// WioTerminalの左ボタンを押すと液晶バックライトOFFにする
 	button1 := machine.PC28 // WioTerminal Button3 Left
@@ -47,59 +50,67 @@ func main() {
 
 	fmt.Println("WiFi Connect start")
 
-	_, err := initialize.Wifi(ssid, password, 10*time.Second)
+	link, _ := probe.Probe()
+
+	err := link.NetConnect(&netlink.ConnectParams{
+		Ssid:       ssid,
+		Passphrase: password,
+	})
+
 	if err != nil {
+		fmt.Println("WiFi Connect fail!")
 		log.Fatal(err)
 	}
 	fmt.Println("WiFi Connect success")
+
 	led.High()
 
-	display = initdisplay.InitDisplay() // ここで液晶のバックライトがONになる machine.LCD_BACKLIGHT.High()が呼ばれている
+	display = InitDisplay() // 液晶ディスプレイ初期化
+
 	img, err := jpeg.Decode(strings.NewReader(string(gotify_image)))
 	if err != nil {
 		log.Fatal(err)
 	}
 	display.FillScreen(white)
-
 	time.Sleep(2 * time.Second)
 	machine.LCD_BACKLIGHT.Low() // 液晶のバックライトOFF
 
-	err = run(led, img)
+	port = 4416
+	addr := fmt.Sprintf(":%d", port)
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("Error listening:", err)
+		os.Exit(1)
 	}
+	defer listener.Close()
+	fmt.Println("TCP server is running on %s\n", listener.Addr())
 
-	select {}
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error accepting:", err)
+			continue
+		}
+
+		go run(conn, led, img)
+	}
 
 }
 
-var (
-	port int
-)
+func run(conn net.Conn, led machine.Pin, img image.Image) error {
+	defer conn.Close()
 
-func run(led machine.Pin, img image.Image) error {
-	port = 4416 // udp port
+	fmt.Printf("Client Connected:", conn.RemoteAddr())
 
-	ip := net.ParseIP("255.255.255.255") // broadcast
-	raddr := &net.UDPAddr{IP: ip, Port: port}
-	laddr := &net.UDPAddr{Port: port}
-
-	conn, err := net.DialUDP("udp", laddr, raddr)
-	for ; err != nil; conn, err = net.DialUDP("udp", laddr, raddr) {
-		time.Sleep(5 * time.Second)
-	}
-
-	fmt.Printf("UDP listen : %d\r\n", port)
-	buf := [32]byte{}
-	n := int(0)
+	buf := [1024]byte{}
 	for {
-		// バッファがあるためか、ある程度データが蓄積されないと読み込みされない?
-		// 送信間隔を1分くらい空けないと、次のパケットを読みとらない。
-		// 同じデータを送信しても反応しないことが多い。
-		n, err = conn.Read(buf[:])
-		if err != nil {
-			fmt.Println("conn.Read() error!")
-			// return err
+		n, err := conn.Read(buf[:])
+		if err != nil && err == io.EOF {
+			fmt.Println(err)
+			break
+		} else if err != nil {
+			fmt.Println(err)
+			continue
 		} else if n >= 5 {
 			// fmt.Printf("recv: %s\r\n", string(buf[:n]))
 			recv_msg := string(buf[:5])
@@ -122,10 +133,54 @@ func run(led machine.Pin, img image.Image) error {
 		time.Sleep(1 * time.Second)
 	}
 	conn.Close()
+	fmt.Println("Client Disconnected.")
+
 	return nil
 }
 
+// "tinygo.org/x/drivers/examples/ili9341/initdisplay"
+func InitDisplay() *ili9341.Device {
+
+	backlight := machine.LCD_BACKLIGHT
+	backlight.Configure(machine.PinConfig{Mode: machine.PinOutput})
+
+	spi := machine.SPI3
+	spi.Configure(machine.SPIConfig{
+		Frequency: 40000000,
+		SCK:       machine.LCD_SCK_PIN,
+		SDO:       machine.LCD_SDO_PIN,
+		SDI:       machine.LCD_SDI_PIN,
+	})
+	//	cs := machine.LCD_SCK_PIN
+	/*
+		cs := machine.LCD_SS_PIN
+		dc := machine.LCD_DC
+		rst := machine.LCD_RESET
+
+		cs.Configure(machine.PinConfig{Mode: machine.PinOutput})
+		dc.Configure(machine.PinConfig{Mode: machine.PinOutput})
+		rst.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	*/
+
+	display := ili9341.NewSPI(
+		spi,
+		machine.LCD_DC,
+		machine.LCD_SS_PIN,
+		machine.LCD_RESET,
+	)
+
+	display.Configure(ili9341.Config{})
+
+	backlight.High()
+
+	display.SetRotation(ili9341.Rotation270)
+
+	return display
+}
+
 func displayImage(img image.Image) {
+
+	//	fmt.Printf("Y Size=%d, X Size=%d\r\n", img.Bounds().Max.Y, img.Bounds().Max.X)
 
 	for y := 0; y < img.Bounds().Max.Y; y++ {
 		for x := 0; x < img.Bounds().Max.X; x++ {

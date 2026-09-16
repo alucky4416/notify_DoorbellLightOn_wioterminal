@@ -2,25 +2,24 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"machine"
 	"net"
-	"strings"
 	"time"
 
-	"github.com/sago35/tinygo-examples/wioterminal/initialize"
-	"tinygo.org/x/drivers/net/http"
+	"tinygo.org/x/drivers/netlink"
+	"tinygo.org/x/drivers/netlink/probe"
 )
 
 var (
-	ssid     string
-	password string
+	ssid         string
+	password     string
+	alerter_addr string // ex: "<alerter_ip>:4416"
 )
 
 func main() {
-	ssid = "<YOUR WIFI SSID>"
-	password = "<YOUR WIFI PASSWORD>"
+	ssid = "<Your WiFi ssid>"
+	password = "<Your WiFi passphrase>"
 
 	machine.InitADC()
 	sensor := machine.ADC{Pin: machine.WIO_LIGHT} // wio terminal photo detector
@@ -35,16 +34,23 @@ func main() {
 
 	fmt.Println("WiFi Connect start")
 
-	_, err := initialize.Wifi(ssid, password, 10*time.Second)
+	link, _ := probe.Probe()
+
+	err := link.NetConnect(&netlink.ConnectParams{
+		Ssid:       ssid,
+		Passphrase: password,
+	})
 	if err != nil {
+		fmt.Println("WiFi Connect fail!")
 		log.Fatal(err)
 	}
+
 	fmt.Println("WiFi Connect success")
 
 	masktime := 0
 	cntr := 0
 	for {
-		// 一度、検出したら、一定時間反応しないようにする ( 300 = 60sec * 5min)
+		// 一度、検出したら、一定時間反応しないようにする必要がある。( 300 = 60sec * 5min)
 		if masktime > 0 {
 			masktime--
 			// fmt.Printf("masktime = %d\n", masktime)
@@ -65,29 +71,36 @@ func main() {
 		if cntr > 4 { // 5回連続(1秒以上)閾値越えしたら、通知送信 200ms * 5 = 1sec
 			cntr = 0
 			led.High()
-			fmt.Println("over time!")
+			fmt.Println("detect LightOn!")
 			masktime = 300 //  (300 = 60sec * 5min)
 
-			// send notify to Alerter 
 			err = run()
 			if err != nil {
-				log.Fatal(err)
+				// log.Fatal(err)
+				fmt.Println(err)
 			}
 
 		} else {
 			time.Sleep(200 * time.Millisecond)
 		}
 	}
+	link.NetDisconnect()
+
 }
 
 func run() error {
-	var port int
+	alerter_addr = "<Your alerter_device IPaddress>:<port>"
 
-	port = 4416
-	conn, _ := net.Dial("udp", fmt.Sprintf("255.255.255.255:%d", port))
-	for i := 0; i < 3; i++ {
-		fmt.Printf("send to 255.255.255.255:%d", port)
-		fmt.Fprintf(conn, "Alert")
+	conn, err := net.Dial("tcp", alerter_addr)
+	for ; err != nil; conn, err = net.Dial("tcp", alerter_addr) {
+		fmt.Println(err)
+		time.Sleep(1 * time.Second)
+	}
+
+	for i := 0; i < 1; i++ {
+		fmt.Printf("write to %s\n", alerter_addr)
+		//fmt.Fprintf(conn, "Alert")
+		conn.Write([]byte("Alert"))
 		time.Sleep(500 * time.Millisecond)
 	}
 	conn.Close()
